@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Energy Data Collection System
-Collects script-level and function-level energy metrics
-"""
-
 import psutil
 import subprocess
 import time
