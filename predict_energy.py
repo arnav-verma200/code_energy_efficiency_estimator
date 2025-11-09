@@ -8,6 +8,7 @@ Usage:
     predict_energy.py script.py --functions   # With function breakdown
     predict_energy.py --live                  # Monitor running process
     predict_energy.py --stats                 # Quick system overview
+    predict_energy.py --install               # Install global alias
 """
 
 import psutil
@@ -18,6 +19,7 @@ import sys
 import os
 import ast
 import cProfile
+from pathlib import Path
 from typing import Dict, List, Optional
 
 class CompleteEnergyAnalyzer:
@@ -92,6 +94,10 @@ class CompleteEnergyAnalyzer:
         print(f"   CPU Usage:       {cpu_percent:>8.2f}%")
         print(f"   Memory Usage:    {mem.percent:>8.2f}%")
         print(f"   Memory Used:     {mem_used:>8.2f} GB")
+        
+        # Disk usage
+        disk = psutil.disk_usage('/')
+        print(f"   Disk Usage:      {disk.percent:>8.2f}%")
         print()
         
         # Python processes
@@ -132,6 +138,8 @@ class CompleteEnergyAnalyzer:
         print()
         if self.model_loaded:
             print(f"🤖 Model: Loaded from {os.path.basename(self.model_path)}")
+        else:
+            print("⚠️  Model: Not loaded (run 'python train_model.py' first)")
         print("=" * 70)
     
     # ========== LIVE MONITORING MODE ==========
@@ -143,8 +151,10 @@ class CompleteEnergyAnalyzer:
             print("=" * 70)
             print("❌ No Python processes found running.")
             print("=" * 70)
-            print("\nTip: Start your Python script in another terminal first.")
-            print("Example: python your_script.py &")
+            print("\n💡 Tips:")
+            print("   1. Start your Python script in another terminal:")
+            print("      python your_script.py &")
+            print("   2. Then run: predict_energy.py --live")
             return
         
         print("=" * 70)
@@ -170,7 +180,8 @@ class CompleteEnergyAnalyzer:
             target = processes[0]
         
         print(f"\n📍 Monitoring: {os.path.basename(target['script'])} (PID: {target['pid']})")
-        print(f"⏱️  Duration: {duration} seconds\n")
+        print(f"⏱️  Duration: {duration} seconds")
+        print(f"⌨️  Press Ctrl+C to stop early\n")
         print("-" * 70)
         
         proc = target['process']
@@ -197,12 +208,14 @@ class CompleteEnergyAnalyzer:
             if measurements:
                 # Calculate results
                 avg_cpu = sum(m['cpu'] for m in measurements) / len(measurements)
+                max_cpu = max(m['cpu'] for m in measurements)
                 avg_mem = sum(m['memory'] for m in measurements) / len(measurements)
+                max_mem = max(m['memory'] for m in measurements)
                 energy = self.predict_energy(avg_cpu, avg_mem, duration)
                 
                 print("\n📊 Monitoring Results:")
-                print(f"   Average CPU:     {avg_cpu:>8.2f}%")
-                print(f"   Average Memory:  {avg_mem:>8.2f} MB")
+                print(f"   Average CPU:     {avg_cpu:>8.2f}%  (Peak: {max_cpu:.2f}%)")
+                print(f"   Average Memory:  {avg_mem:>8.2f} MB (Peak: {max_mem:.2f} MB)")
                 print(f"   Duration:        {duration:>8.2f}s")
                 print(f"\n⚡ Energy Cost:      {energy:>8.2f} units")
                 print(f"💵 Estimated Cost:   ${energy * 0.01:>8.4f}")
@@ -219,6 +232,15 @@ class CompleteEnergyAnalyzer:
             
         except KeyboardInterrupt:
             print("\n\n⚠️  Monitoring stopped by user.")
+            if measurements:
+                avg_cpu = sum(m['cpu'] for m in measurements) / len(measurements)
+                avg_mem = sum(m['memory'] for m in measurements) / len(measurements)
+                partial_duration = len(measurements)
+                energy = self.predict_energy(avg_cpu, avg_mem, partial_duration)
+                print(f"\n📊 Partial Results ({partial_duration}s):")
+                print(f"   Average CPU:     {avg_cpu:.2f}%")
+                print(f"   Average Memory:  {avg_mem:.2f} MB")
+                print(f"   Energy Cost:     {energy:.2f} units")
         
         print("=" * 70)
     
@@ -452,6 +474,91 @@ class CompleteEnergyAnalyzer:
             else:
                 print("⚠️  No functions found in script.")
 
+def install_alias():
+    """Install global 'energy' alias"""
+    print("=" * 70)
+    print("⚡ ENERGY ANALYZER - ALIAS INSTALLER")
+    print("=" * 70)
+    print()
+    
+    # Get script path
+    script_path = Path(__file__).resolve()
+    print(f"📂 Script location: {script_path}\n")
+    
+    # Detect shell
+    shell = os.environ.get('SHELL', '')
+    home = Path.home()
+    
+    if 'bash' in shell:
+        config_file = home / '.bashrc'
+        shell_name = 'bash'
+    elif 'zsh' in shell:
+        config_file = home / '.zshrc'
+        shell_name = 'zsh'
+    else:
+        if (home / '.bashrc').exists():
+            config_file = home / '.bashrc'
+            shell_name = 'bash'
+        elif (home / '.zshrc').exists():
+            config_file = home / '.zshrc'
+            shell_name = 'zsh'
+        else:
+            print("❌ Could not detect shell configuration file.")
+            print("\n💡 Manually add this to your ~/.bashrc or ~/.zshrc:")
+            print(f'\n    alias energy="python3 {script_path}"\n')
+            return
+    
+    print(f"🐚 Detected shell: {shell_name}")
+    print(f"📝 Config file: {config_file}\n")
+    
+    # Check if alias exists
+    alias_exists = False
+    if config_file.exists():
+        with open(config_file, 'r') as f:
+            alias_exists = 'alias energy=' in f.read()
+    
+    if alias_exists:
+        print("⚠️  Alias 'energy' already exists!")
+        response = input("   Replace it? (y/n): ").lower().strip()
+        if response != 'y':
+            print("\n❌ Installation cancelled.\n")
+            return
+        
+        # Remove old alias
+        with open(config_file, 'r') as f:
+            lines = f.readlines()
+        with open(config_file, 'w') as f:
+            for line in lines:
+                if 'alias energy=' not in line:
+                    f.write(line)
+        print("   ✅ Removed old alias")
+    
+    # Add new alias
+    try:
+        with open(config_file, 'a') as f:
+            f.write(f'\n# Energy Analyzer\n')
+            f.write(f'alias energy="python3 {script_path}"\n')
+        
+        print("\n✅ Alias installed successfully!")
+        print("=" * 70)
+        print()
+        print("🎯 To activate, run:")
+        print(f"   source {config_file}")
+        print()
+        print("   Or open a new terminal.")
+        print()
+        print("📝 Usage:")
+        print("   energy                        # System stats")
+        print("   energy script.py              # Analyze script")
+        print("   energy script.py --functions  # Full breakdown")
+        print("   energy --live                 # Monitor process")
+        print()
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        print("\n💡 Manually add this to your config file:")
+        print(f'    alias energy="python3 {script_path}"\n')
+
 def main():
     """Main CLI entry point"""
     
@@ -461,6 +568,11 @@ def main():
         print("\n✅ Energy Analyzer Ready\n")
         analyzer = CompleteEnergyAnalyzer()
         analyzer.show_system_stats()
+        return
+    
+    # Install alias
+    if sys.argv[1] == "--install":
+        install_alias()
         return
     
     # Help
@@ -475,12 +587,14 @@ Usage:
     predict_energy.py script.py --detailed    # Show script output
     predict_energy.py --live [seconds]        # Monitor running process
     predict_energy.py --stats                 # System overview
+    predict_energy.py --install               # Install global 'energy' alias
 
 Examples:
     predict_energy.py                         # Quick system check
     predict_energy.py my_script.py            # Analyze a script
     predict_energy.py my_script.py --functions # Full breakdown
     predict_energy.py --live 30               # Monitor for 30s
+    predict_energy.py --install               # Setup global command
         """)
         return
     
